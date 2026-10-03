@@ -18,7 +18,7 @@ if ($process) {
         $process.CommandLine -notlike '*cn.bit101.bitlogin.server.ApplicationKt*') {
         throw 'The PID no longer belongs to BIT Login OIDC; refusing to stop another process.'
     }
-    Stop-Process -Id $processId
+    Stop-Process -Id $processId -Force
     Wait-Process -Id $processId -Timeout 15 -ErrorAction SilentlyContinue
 }
 Remove-Item -LiteralPath $pidFile -Force
