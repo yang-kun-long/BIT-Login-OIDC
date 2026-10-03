@@ -21,6 +21,17 @@ The workbench is available only when `OIDC_ADMIN_STUDENT_IDS` contains one or mo
 
 Blocked IDs are stored in the same SQLite database configured by `AUTH_DB_PATH`. The table stores the ID and creation timestamp only. Blacklist checks happen after CAS login, during authorization-code redemption, and at UserInfo. Adding an ID also invalidates in-memory codes and access tokens for it. An ID Token already returned to a client cannot be recalled and remains cryptographically valid until its short expiry (at most 15 minutes with current configuration); clients should rely on short lifetimes and verify `exp`.
 
+The workbench is also the operational handoff for school migration. It provides:
+
+- **Overview:** listener availability, active login flows/tokens, blocked-account count, and audit count.
+- **Application integration:** the registered client ID, exact redirect URI(s), issuer, and all OIDC endpoints.
+- **Protocol and security:** Authorization Code, S256 PKCE, public-client authentication, scopes, returned claims, and signing-key metadata (`kid`, algorithm, and public key size only).
+- **Access control:** the denylist and immediate revocation of that subject's in-memory grants.
+- **Audit:** recent administrator login, logout, denylist, and denied-access actions. Audit rows contain only IDs, action names, targets, and timestamps.
+- **Migration exports:** authenticated downloads at `/admin/export/oidc.json` and `/admin/export/oidc.md`. They contain public integration metadata suitable for an application request; they never contain private keys, passwords, tokens, or database paths.
+
+The current deployment is intentionally single-client and read-only from the browser. Changing the issuer, callback allowlist, upstream authentication adapter, or TLS mode remains a reviewed deployment-config change followed by a restart; the workbench does not provide dynamic client registration or secret/key editing.
+
 Use HTTPS for administration. On the HTTP campus pilot, cookies cannot be marked `Secure`; `SameSite=Strict`, `HttpOnly`, expiring server-side sessions, and CSRF tokens reduce browser-side risk but do not encrypt credentials or prevent same-network interception.
 
 Admin sessions are held in memory and are cleared on service restart. The allowlist is read at startup, so changing administrator IDs requires a restart.

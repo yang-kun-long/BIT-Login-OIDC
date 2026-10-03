@@ -46,11 +46,13 @@ class OidcAdminRoutesTest {
     @Test
     fun `CAS admin can manage blacklist while unauthenticated and csrf requests are rejected`() = testApplication {
         val admins = OidcAdminStore(config.adminStudentIds, config.adminSessionTtlSeconds)
-        val blocklist = OidcBlocklistStore(tempDir.resolve("auth.db").toString())
+        val database = tempDir.resolve("auth.db").toString()
+        val blocklist = OidcBlocklistStore(database)
+        val audit = OidcAuditStore(database)
         val grants = OidcGrantStore(config)
         application {
             routing {
-                oidcAdminRoutes(config, admins, blocklist, grants, FakeAuthenticator())
+                oidcAdminRoutes(config, admins, blocklist, grants, FakeAuthenticator(), audit = audit)
             }
         }
         val browser = createClient { followRedirects = false }
@@ -81,6 +83,27 @@ class OidcAdminRoutesTest {
         val dashboardHtml = dashboard.bodyAsText()
         assertTrue(dashboardHtml.contains("管理工作台"))
         assertTrue(dashboardHtml.contains("admin01"))
+        assertTrue(dashboardHtml.contains("应用接入"))
+        assertTrue(dashboardHtml.contains("协议与安全"))
+        assertTrue(dashboardHtml.contains("操作审计"))
+        assertTrue(dashboardHtml.contains("test-client"))
+        assertTrue(audit.list().any { it.action == "admin_login" && it.actorStudentId == "admin01" })
+
+        val unauthenticatedExport = browser.get("/admin/export/oidc.json")
+        assertEquals(HttpStatusCode.Found, unauthenticatedExport.status)
+
+        val jsonExport = browser.get("/admin/export/oidc.json") { header(HttpHeaders.Cookie, cookie) }
+        assertEquals(HttpStatusCode.OK, jsonExport.status)
+        assertTrue(jsonExport.headers[HttpHeaders.ContentDisposition].orEmpty().contains("oidc-integration.json"))
+        assertTrue(jsonExport.bodyAsText().contains("\"client_id\":\"test-client\""))
+        assertFalse(jsonExport.bodyAsText().contains("password"))
+
+        val markdownExport = browser.get("/admin/export/oidc.md") { header(HttpHeaders.Cookie, cookie) }
+        assertEquals(HttpStatusCode.OK, markdownExport.status)
+        assertTrue(markdownExport.headers[HttpHeaders.ContentDisposition].orEmpty().contains("oidc-integration.md"))
+        assertTrue(markdownExport.bodyAsText().contains("BIT Login OIDC 统一登录接入清单"))
+        assertFalse(markdownExport.bodyAsText().contains("private key"))
+
         val dashboardCsrf = Regex("name=\"csrf\" value=\"([^\"]+)\"").find(dashboardHtml)!!.groupValues[1]
         val otherToken = grants.issueAccessToken("other-id")
         val affectedToken = grants.issueAccessToken("test-student-01")
@@ -130,6 +153,7 @@ class OidcAdminRoutesTest {
         }
         assertEquals(HttpStatusCode.Found, remove.status)
         assertFalse(blocklist.contains("test-student-01"))
+        assertTrue(audit.list().any { it.action == "blacklist_add" && it.targetStudentId == "test-student-01" })
     }
 
     @Test

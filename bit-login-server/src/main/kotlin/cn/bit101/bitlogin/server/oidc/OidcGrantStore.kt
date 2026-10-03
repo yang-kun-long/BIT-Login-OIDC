@@ -27,6 +27,12 @@ data class OidcLoginFlow(
 
 data class OidcTokenGrant(val subject: String, val nonce: String)
 
+data class OidcRuntimeStats(
+    val activeLoginFlows: Int,
+    val activeAuthorizationCodes: Int,
+    val activeAccessTokens: Int,
+)
+
 class OidcGrantStore(private val config: OidcConfig) {
     private data class AuthorizationCode(
         val clientId: String,
@@ -142,6 +148,15 @@ class OidcGrantStore(private val config: OidcConfig) {
     fun revokeSubject(subject: String) = synchronized(lock) {
         authorizationCodes.entries.removeIf { it.value.subject == subject }
         accessTokens.entries.removeIf { it.value.subject == subject }
+    }
+
+    fun runtimeStats(): OidcRuntimeStats = synchronized(lock) {
+        cleanup()
+        OidcRuntimeStats(
+            activeLoginFlows = flows.size,
+            activeAuthorizationCodes = authorizationCodes.size,
+            activeAccessTokens = accessTokens.size,
+        )
     }
 
     fun cleanup() = synchronized(lock) {

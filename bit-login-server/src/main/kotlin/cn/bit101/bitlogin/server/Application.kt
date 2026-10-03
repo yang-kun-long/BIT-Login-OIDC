@@ -15,6 +15,7 @@ import cn.bit101.bitlogin.server.oidc.CasIdentityAuthenticator
 import cn.bit101.bitlogin.server.oidc.OidcConfig
 import cn.bit101.bitlogin.server.oidc.OidcGrantStore
 import cn.bit101.bitlogin.server.oidc.OidcAdminStore
+import cn.bit101.bitlogin.server.oidc.OidcAuditStore
 import cn.bit101.bitlogin.server.oidc.OidcBlocklistStore
 import cn.bit101.bitlogin.server.oidc.OidcSigningKey
 import cn.bit101.bitlogin.server.oidc.oidcAdminRoutes
@@ -58,6 +59,9 @@ fun Application.mainModule(appConfig: AppConfig, oidcConfig: OidcConfig = OidcCo
     if (appConfig.identityOnly) {
         val grants = OidcGrantStore(oidcConfig)
         val blocklist = OidcBlocklistStore(appConfig.authDbPath)
+        val audit = OidcAuditStore(appConfig.authDbPath)
+        monitor.subscribe(ApplicationStopping) { audit.close() }
+        monitor.subscribe(ApplicationStopped) { audit.close() }
         val admins = oidcConfig.adminStudentIds.takeIf { it.isNotEmpty() }
             ?.let { OidcAdminStore(it, oidcConfig.adminSessionTtlSeconds) }
         val signingKey = OidcSigningKey.loadOrCreate(oidcConfig.signingKeyFile, oidcConfig.keyId)
@@ -69,7 +73,7 @@ fun Application.mainModule(appConfig: AppConfig, oidcConfig: OidcConfig = OidcCo
         routing {
             rootRoute(identityOnly = true)
             oidcRoutes(oidcConfig, signingKey, grants, authenticator, blocklist)
-            if (admins != null) oidcAdminRoutes(oidcConfig, admins, blocklist, grants, authenticator)
+            if (admins != null) oidcAdminRoutes(oidcConfig, admins, blocklist, grants, authenticator, signingKey, audit)
         }
         launch {
             while (true) {

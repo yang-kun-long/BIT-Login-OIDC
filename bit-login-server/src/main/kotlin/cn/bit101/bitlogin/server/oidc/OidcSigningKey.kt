@@ -25,6 +25,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
 class OidcSigningKey private constructor(private val key: RSAKey) {
+    val keyId: String get() = key.keyID.orEmpty()
+    val algorithm: String = JWSAlgorithm.RS256.name
+    val keySizeBits: Int get() = key.toRSAPublicKey().modulus.bitLength()
+
     fun sign(claims: JWTClaimsSet): String {
         val jwt = SignedJWT(
             JWSHeader.Builder(JWSAlgorithm.RS256)
