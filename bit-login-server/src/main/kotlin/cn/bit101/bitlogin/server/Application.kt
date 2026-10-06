@@ -69,6 +69,8 @@ fun Application.mainModule(appConfig: AppConfig, oidcConfig: OidcConfig = OidcCo
             challengeStore,
             connectTimeoutMs = appConfig.connectTimeoutMs,
             socketTimeoutMs = appConfig.socketTimeoutMs,
+            upstreamCallbackUrl = oidcConfig.upstreamCallbackUrl,
+            upstreamClientId = oidcConfig.upstreamClientId,
         )
         routing {
             rootRoute(identityOnly = true)
@@ -112,4 +114,3 @@ fun Application.mainModule(appConfig: AppConfig, oidcConfig: OidcConfig = OidcCo
     }
     return challengeStore
 }
-

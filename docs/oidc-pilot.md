@@ -1,6 +1,8 @@
 # BIT Login OIDC Identity Gateway
 
-This deployment mode verifies an account through BIT CAS and returns only the authenticated login ID as `sub` and `student_id`. It does not query or return a name, grades, schedule, or other student profile data. The legacy API routes are not mounted in identity-only mode.
+For application developers, see the [Chinese integration guide](oidc-integration.md) for registration, configuration, the login sequence, account mapping, and acceptance checks. Applications are registered independently and may use separate token lifetimes.
+
+This deployment mode verifies an account through BIT CAS and returns the authenticated login ID as `sub` and `student_id`, plus the name returned by the school's gateway as `name`. It does not return roles, grades, schedule, or other student profile data. The legacy API routes are not mounted in identity-only mode.
 
 ## OIDC Endpoints
 
@@ -13,7 +15,7 @@ This deployment mode verifies an account through BIT CAS and returns only the au
 | Signing keys | `/jwks` |
 | Admin workbench | `/admin` |
 
-The provider supports Authorization Code with `S256` PKCE, `state`, and `nonce`. It is a public client and does not accept a client secret. Request `openid student_id`; ID Token and UserInfo expose only `sub` and `student_id`. Authorization codes are single-use and short-lived.
+The provider supports Authorization Code with `S256` PKCE, `state`, and `nonce`. It is a public client and does not accept a client secret. Request `openid student_id`; ID Token and UserInfo expose `sub`, `student_id`, and the authenticated `name`. Authorization codes are single-use and short-lived.
 
 ## Admin Workbench
 
@@ -30,7 +32,7 @@ The workbench is also the operational handoff for school migration. It provides:
 - **Audit:** recent administrator login, logout, denylist, and denied-access actions. Audit rows contain only IDs, action names, targets, and timestamps.
 - **Migration exports:** authenticated downloads at `/admin/export/oidc.json` and `/admin/export/oidc.md`. They contain public integration metadata suitable for an application request; they never contain private keys, passwords, tokens, or database paths.
 
-The current deployment is intentionally single-client and read-only from the browser. Changing the issuer, callback allowlist, upstream authentication adapter, or TLS mode remains a reviewed deployment-config change followed by a restart; the workbench does not provide dynamic client registration or secret/key editing.
+Application registration and token lifetimes are deployment configuration and remain read-only from the browser. Changing the issuer, application callback allowlists, upstream authentication adapter, or TLS mode remains a reviewed deployment-config change followed by a restart; the workbench does not provide dynamic client registration or secret/key editing.
 
 Use HTTPS for administration. On the HTTP campus pilot, cookies cannot be marked `Secure`; `SameSite=Strict`, `HttpOnly`, expiring server-side sessions, and CSRF tokens reduce browser-side risk but do not encrypt credentials or prevent same-network interception.
 
@@ -49,12 +51,16 @@ OIDC_ISSUER=https://login.example.edu
 OIDC_CLIENT_ID=example-app
 OIDC_REDIRECT_URIS=https://app.example.edu/oidc/callback
 OIDC_SIGNING_KEY_FILE=/var/lib/bit-login/oidc-signing-key.pem
+OIDC_UPSTREAM_CALLBACK_URL=https://sso.bit.edu.cn/gate/cas-success/personal-center-home-page?personId=667e67ca6b050d065ecbf781&pageId=666fffd2397df800012e5a4c&objectId=6889cb58bbce4700065c13b7
+OIDC_UPSTREAM_CLIENT_ID=OC4wNS4wNS4wNy4wMC4wMy4wMS4wMS4w
 OIDC_ADMIN_STUDENT_IDS=admin-id-1,admin-id-2
 OIDC_ADMIN_SESSION_TTL=1800
 OIDC_ADMIN_COOKIE_SECURE=true
 ```
 
 `OIDC_REDIRECT_URIS` must exactly match each client callback. Keep production values, private keys, real addresses, and administrator IDs out of Git. For Windows, copy `deploy/windows/oidc-settings.example.ps1` to the ignored local file `deploy/windows/oidc-settings.ps1`, then set actual values there. Leave `AdminStudentIds` empty to keep the workbench disabled.
+
+`OIDC_UPSTREAM_CALLBACK_URL` and `OIDC_UPSTREAM_CLIENT_ID` identify the registered school portal route used to read `/gate/getUser`. They are public routing metadata, not a password or client secret. Override them when the school changes the registered portal application; do not put one-time `ticket`, `code`, or `state` values in either setting.
 
 ## HTTPS Certificate
 

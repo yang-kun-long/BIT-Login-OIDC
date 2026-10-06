@@ -20,7 +20,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.Date
 import java.util.Base64
-import cn.bit101.bitlogin.server.auth.ChallengeHandle
 import cn.bit101.bitlogin.server.auth.ChallengeError
 
 fun Route.oidcRoutes(
@@ -45,7 +44,7 @@ fun Route.oidcRoutes(
             put("id_token_signing_alg_values_supported", Json.parseToJsonElement("[\"RS256\"]"))
             put("token_endpoint_auth_methods_supported", Json.parseToJsonElement("[\"none\"]"))
             put("scopes_supported", Json.parseToJsonElement("[\"openid\",\"student_id\"]"))
-            put("claims_supported", Json.parseToJsonElement("[\"sub\",\"student_id\"]"))
+            put("claims_supported", Json.parseToJsonElement("[\"sub\",\"student_id\",\"name\"]"))
             put("code_challenge_methods_supported", Json.parseToJsonElement("[\"S256\"]"))
         })
     }
@@ -61,11 +60,12 @@ fun Route.oidcRoutes(
         val clientId = query["client_id"].orEmpty()
         val redirectUri = query["redirect_uri"].orEmpty()
         val state = query["state"].orEmpty()
-        if (clientId != config.clientId || config.clientId.isBlank()) {
+        val application = config.application(clientId)
+        if (application == null || clientId.isBlank()) {
             call.respondOAuthError(HttpStatusCode.BadRequest, "invalid_client", "Unknown client")
             return@get
         }
-        if (redirectUri !in config.redirectUris) {
+        if (redirectUri !in application.redirectUris) {
             call.respondOAuthError(HttpStatusCode.BadRequest, "invalid_request", "Unregistered redirect_uri")
             return@get
         }
@@ -160,19 +160,19 @@ fun Route.oidcRoutes(
         }
         when (snapshot["status"] as? String) {
             "authenticated" -> {
-                val subject = authenticator.authenticatedSubject(challenge)
-                if (subject.isNullOrBlank()) {
+                val identity = authenticator.authenticatedIdentity(challenge)
+                if (identity == null || identity.subject.isBlank()) {
                     val retry = grants.resetChallenge(flow.id)
                     if (retry == null) call.respondOAuthError(HttpStatusCode.BadRequest, "invalid_request", "Login request expired")
                     else call.respondHtml(loginPage(retry, "无法确认登录账号，请重新登录"), HttpStatusCode.Unauthorized)
                     return@get
                 }
-                if (blocklist.contains(subject)) {
+                if (blocklist.contains(identity.subject)) {
                     grants.resetChallenge(flow.id)
                     call.respondHtml(loginPage(grants.getFlow(flow.id) ?: flow, "该学工号暂不可通过统一登录"), HttpStatusCode.Forbidden)
                     return@get
                 }
-                val redirect = grants.completeLogin(flow.id, subject)
+                val redirect = grants.completeLogin(flow.id, identity.subject, identity.name)
                 if (redirect == null) call.respondOAuthError(HttpStatusCode.BadRequest, "invalid_request", "Login request expired")
                 else call.respondRedirect(redirect)
             }
@@ -249,7 +249,8 @@ fun Route.oidcRoutes(
             call.respondOAuthError(HttpStatusCode.Unauthorized, "invalid_client", "This is a public PKCE client")
             return@post
         }
-        if (params["grant_type"] != "authorization_code" || params["client_id"] != config.clientId) {
+        val application = config.application(params["client_id"].orEmpty())
+        if (params["grant_type"] != "authorization_code" || application == null) {
             call.respondOAuthError(HttpStatusCode.BadRequest, "invalid_request", "Invalid token request")
             return@post
         }
@@ -269,23 +270,24 @@ fun Route.oidcRoutes(
             return@post
         }
         val now = System.currentTimeMillis()
-        val expiresAt = now + config.accessTokenTtlSeconds * 1000L
+        val expiresAt = now + application.accessTokenTtlSeconds * 1000L
         val idToken = signingKey.sign(
             JWTClaimsSet.Builder()
                 .issuer(config.issuer)
                 .subject(grant.subject)
-                .audience(config.clientId)
+                .audience(application.clientId)
                 .issueTime(Date(now))
                 .expirationTime(Date(expiresAt))
                 .claim("nonce", grant.nonce)
                 .claim("student_id", grant.subject)
+                .apply { grant.name?.let { claim("name", it) } }
                 .build(),
         )
-        val accessToken = grants.issueAccessToken(grant.subject)
+        val accessToken = grants.issueAccessToken(grant.subject, application.accessTokenTtlSeconds, grant.name)
         call.respond(buildJsonObject {
             put("access_token", accessToken)
             put("token_type", "Bearer")
-            put("expires_in", config.accessTokenTtlSeconds)
+            put("expires_in", application.accessTokenTtlSeconds)
             put("scope", "openid student_id")
             put("id_token", idToken)
         })
@@ -295,15 +297,19 @@ fun Route.oidcRoutes(
         call.noStore()
         val header = call.request.headers[HttpHeaders.Authorization].orEmpty()
         val token = header.takeIf { it.startsWith("Bearer ", ignoreCase = true) }?.substringAfter(' ')?.trim().orEmpty()
-        val subject = if (token.isBlank()) null else grants.subjectForAccessToken(token)
-        if (subject == null || blocklist.contains(subject)) {
+        val identity = if (token.isBlank()) null else grants.identityForAccessToken(token)
+        if (identity == null || blocklist.contains(identity.subject)) {
             call.response.headers.append("WWW-Authenticate", "Bearer error=\"invalid_token\"")
             call.respondOAuthError(HttpStatusCode.Unauthorized, "invalid_token", "A valid bearer token is required")
             return@get
         }
+        val subject = identity.subject
         call.respond(buildJsonObject {
             put("sub", subject)
             put("student_id", subject)
+            // Name is returned only when the upstream gateway supplied it for
+            // this authenticated session; it is never inferred from the ID.
+            identity.name?.let { put("name", it) }
         })
     }
 }

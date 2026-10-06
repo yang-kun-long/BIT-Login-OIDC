@@ -1,0 +1,21 @@
+[Unit]
+Description=BIT Login OIDC identity gateway
+After=network.target
+
+[Service]
+Type=simple
+User=bitlogin
+Group=bitlogin
+WorkingDirectory=/opt/bit-login-oidc/app
+EnvironmentFile=/etc/bit-login-oidc/bit-login-oidc.env
+ExecStart=/opt/bit-login-oidc/app/bin/bit-login-server
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/bit-login-oidc
+
+[Install]
+WantedBy=multi-user.target

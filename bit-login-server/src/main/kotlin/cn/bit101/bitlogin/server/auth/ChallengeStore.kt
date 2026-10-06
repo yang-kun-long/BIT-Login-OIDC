@@ -97,7 +97,7 @@ class ChallengeStore(
         val now = System.currentTimeMillis() / 1000.0
         transaction(true) { conn ->
             conn.prepareStatement(
-                "INSERT INTO auth_challenges (challenge_id, token_hash, status, requested_services, ready_services, masked_phone, sms_purpose, error, subject, created_at, expires_at) VALUES (?, ?, 'running', ?, '[]', '', '', '', ?, ?, ?)"
+                "INSERT INTO auth_challenges (challenge_id, token_hash, status, requested_services, ready_services, masked_phone, sms_purpose, error, subject, name, created_at, expires_at) VALUES (?, ?, 'running', ?, '[]', '', '', '', ?, '', ?, ?)"
             ).use { stmt ->
                 stmt.setString(1, challengeId)
                 stmt.setString(2, tokenHash(accessToken))
@@ -276,14 +276,15 @@ class ChallengeStore(
         }
     }
 
-    suspend fun complete(challengeId: String) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+    suspend fun complete(challengeId: String, name: String? = null) = withContext(kotlinx.coroutines.Dispatchers.IO) {
         val expiresAt = System.currentTimeMillis() / 1000.0 + readyTtl
         transaction(true) { conn ->
             val updated = conn.prepareStatement(
-                "UPDATE auth_challenges SET status = 'authenticated', masked_phone = '', sms_purpose = '', expires_at = ? WHERE challenge_id = ?"
+                "UPDATE auth_challenges SET status = 'authenticated', masked_phone = '', sms_purpose = '', name = ?, expires_at = ? WHERE challenge_id = ?"
             ).use { stmt ->
-                stmt.setDouble(1, expiresAt)
-                stmt.setString(2, challengeId)
+                stmt.setString(1, name?.trim().orEmpty())
+                stmt.setDouble(2, expiresAt)
+                stmt.setString(3, challengeId)
                 stmt.executeUpdate()
             }
             if (updated != 1) throw ChallengeError("unknown or expired authentication challenge")
@@ -383,6 +384,7 @@ class ChallengeStore(
                         sms_purpose TEXT NOT NULL,
                         error TEXT NOT NULL,
                         subject TEXT NOT NULL,
+                        name TEXT NOT NULL DEFAULT '',
                         created_at REAL NOT NULL,
                         expires_at REAL NOT NULL
                     )
@@ -433,6 +435,13 @@ class ChallengeStore(
         if (challengeColumns.isNotEmpty() && "subject" !in challengeColumns) {
             try {
                 conn.createStatement().use { it.execute("ALTER TABLE auth_challenges ADD COLUMN subject TEXT NOT NULL DEFAULT ''") }
+            } catch (e: java.sql.SQLException) {
+                if (!e.message.orEmpty().contains("duplicate column name", ignoreCase = true)) throw e
+            }
+        }
+        if (challengeColumns.isNotEmpty() && "name" !in challengeColumns) {
+            try {
+                conn.createStatement().use { it.execute("ALTER TABLE auth_challenges ADD COLUMN name TEXT NOT NULL DEFAULT ''") }
             } catch (e: java.sql.SQLException) {
                 if (!e.message.orEmpty().contains("duplicate column name", ignoreCase = true)) throw e
             }
@@ -495,6 +504,7 @@ class ChallengeStore(
                         "sms_purpose" to rs.getString("sms_purpose"),
                         "error" to rs.getString("error"),
                         "subject" to rs.getString("subject"),
+                        "name" to rs.getString("name"),
                         "expires_at" to rs.getDouble("expires_at"),
                     )
                 }

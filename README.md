@@ -1,6 +1,8 @@
 # BIT-Login
 
-This repository also contains an identity-only OpenID Connect gateway mode for campus authentication. It returns the verified login ID only (`sub` and `student_id`); it does not return a name or profile information. See [OIDC gateway and certificate guidance](docs/oidc-pilot.md) and [source provenance](docs/source-and-security.md).
+This repository also contains an identity-only OpenID Connect gateway mode for campus authentication. It returns the verified login ID (`sub` and `student_id`) and the authenticated school name as `name`; it does not return roles or business profile data. See [OIDC gateway and certificate guidance](docs/oidc-pilot.md) and [source provenance](docs/source-and-security.md).
+
+接入其他 Web 项目请阅读 [统一登录项目接入说明](docs/oidc-integration.md)：包含登记清单、配置、登录流程、用户映射、验收与排错，以及多应用和独立有效期配置方式。
 
 [BIT-Login-Python](https://github.com/BIT101-dev/BIT-Login-Python) 的 Kotlin 移植版。monorepo 结构：纯 SDK 模块 + Ktor RESTful 服务。
 
@@ -44,6 +46,16 @@ bit-login-kt/
 ./gradlew :bit-login:scoreManualTest        # 教务系统成绩查询接口可用性
 ```
 
+验证学校门户式回调并读取姓名时，先设置 `BIT_USERNAME`、`BIT_PASSWORD`、
+`BIT_GATEWAY_CALLBACK_URL` 和学校登记的 `BIT_GATEWAY_CLIENT_ID`，再运行：
+
+```bash
+./gradlew :bit-login:identityManualTest
+```
+
+回调地址和 `client_id` 必须从学校门户的实际登记配置复制，不能猜测或写入一次性的
+`ticket`、`code`、`state`。工具只输出账号和姓名，不输出 Cookie 或一次性参数。
+
 ### 用 SDK 完成一次登录
 
 ```kotlin
@@ -56,6 +68,8 @@ suspend fun demo() {
     println(scores)
 }
 ```
+
+如需按学校统一门户的浏览器流程建立网关会话并读取姓名，给 `SsoLogin.login` 传入统一门户实际使用的 `clientId`。登录结果的 `user` 字段来自同一会话的 `/gate/getUser`，其中包含 `username` 和 `name`；不要把姓名用作授权依据。`clientId` 必须由门户登记配置提供，不能猜测或写死。
 
 ### 启动 RESTful 服务
 
@@ -150,6 +164,11 @@ curl -X POST "http://localhost:16384/api/jwb/all_score" \
 | `AUTH_DB_PATH` | `/tmp/bit-login/auth.db` | SQLite challenge 数据库路径 |
 | `AUTH_CHALLENGE_TTL` | `300` | challenge / SMS 有效期（秒） |
 | `AUTH_SESSION_TTL` | `1800` | 已认证 session 有效期（秒） |
+| `OIDC_ACCESS_TOKEN_TTL` | `604800` | 单客户端兼容配置的 token / ID Token 默认有效期（秒），7 天 |
+| `OIDC_APPLICATIONS` | _(空)_ | JSON 应用登记数组；每个应用可独立设置回调和 `access_token_ttl_seconds` |
+| `OIDC_APP_TOKEN_TTLS` | _(空)_ | 兼容旧配置的单客户端 TTL 覆盖，格式 `client-id=seconds` |
+| `OIDC_UPSTREAM_CALLBACK_URL` | BIT 学校门户回调 | 建立学校网关会话并读取认证姓名的门户回调地址，不填一次性参数 |
+| `OIDC_UPSTREAM_CLIENT_ID` | BIT 学校门户客户端 | 学校门户登记的公开客户端 ID，不是密钥 |
 | `REGISTRATION_JWT_PRIVATE_KEY_FILE` | _(空)_ | Ed25519 PKCS#8 PEM 私钥路径 |
 | `REGISTRATION_JWT_ALLOWED_AUDIENCES` | _(空)_ | JWT audience 白名单（逗号分隔） |
 | `REGISTRATION_JWT_TTL` | `300` | JWT 有效期（秒） |

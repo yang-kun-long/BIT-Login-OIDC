@@ -44,6 +44,12 @@ data class SsoLoginResult(
     val cookies: Map<String, String>,
 )
 
+/** Identity returned by the gateway after a successful browser-style login. */
+data class SsoUser(
+    val username: String,
+    val name: String,
+)
+
 typealias SmsCodeCallback = suspend (SmsCodeContext) -> String
 typealias CaptchaSolver = suspend (ByteArray, CaptchaContext) -> String
 typealias RiskTokenProvider = suspend (RiskContext) -> Map<String, Any?>

@@ -10,7 +10,7 @@ Kotlin, Ktor, Nimbus JOSE + JWT, SQLite JDBC, and other dependencies remain subj
 
 ## Identity Data
 
-The OIDC identity-only mode returns the authenticated login account as `sub` and `student_id`. It does not request a legal name or other profile data. The administrator allowlist and denylist use student/staff IDs; the denylist persists only ID and creation time.
+The OIDC identity-only mode returns the authenticated login account as `sub` and `student_id`, and returns the name supplied by the school's gateway as `name`. It does not request roles or other business profile data. The administrator allowlist and denylist use student/staff IDs; the denylist persists only ID and creation time. Applications must treat `name` as display data, never as an authorization key.
 
 The admin workbench also stores a minimal audit trail of administrator actions: actor ID, action, target ID when applicable, and timestamp. It deliberately excludes passwords, verification codes, authorization codes, access tokens, database paths, and private-key material. Application/protocol exports are authenticated and contain only public OIDC integration metadata.
 

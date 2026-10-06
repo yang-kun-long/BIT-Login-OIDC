@@ -25,7 +25,9 @@ data class OidcLoginFlow(
     val redirectLocation: String? = null,
 )
 
-data class OidcTokenGrant(val subject: String, val nonce: String)
+data class OidcTokenGrant(val subject: String, val nonce: String, val name: String? = null)
+
+data class OidcAccessIdentity(val subject: String, val name: String? = null)
 
 data class OidcRuntimeStats(
     val activeLoginFlows: Int,
@@ -40,10 +42,11 @@ class OidcGrantStore(private val config: OidcConfig) {
         val codeChallenge: String,
         val nonce: String,
         val subject: String,
+        val name: String?,
         val expiresAt: Long,
     )
 
-    private data class AccessToken(val subject: String, val expiresAt: Long)
+    private data class AccessToken(val subject: String, val name: String?, val expiresAt: Long)
 
     private val lock = Any()
     private val random = SecureRandom()
@@ -91,7 +94,7 @@ class OidcGrantStore(private val config: OidcConfig) {
         flows[flowId]
     }
 
-    fun completeLogin(flowId: String, subject: String): String? = synchronized(lock) {
+    fun completeLogin(flowId: String, subject: String, name: String? = null): String? = synchronized(lock) {
         val flow = getFlow(flowId) ?: return@synchronized null
         if (flow.challenge == null || subject.isBlank()) return@synchronized null
         flow.redirectLocation?.let { return@synchronized it }
@@ -102,6 +105,7 @@ class OidcGrantStore(private val config: OidcConfig) {
             codeChallenge = flow.request.codeChallenge,
             nonce = flow.request.nonce,
             subject = subject,
+            name = name?.trim()?.takeIf(String::isNotBlank),
             expiresAt = nowSeconds() + config.codeTtlSeconds,
         )
         val redirect = URLBuilder(flow.request.redirectUri).apply {
@@ -127,12 +131,16 @@ class OidcGrantStore(private val config: OidcConfig) {
             !constantTimeEquals(record.codeChallenge, pkceChallenge(codeVerifier))
         ) return@synchronized null
         if (!authorizationCodes.remove(codeHash, record)) return@synchronized null
-        OidcTokenGrant(record.subject, record.nonce)
+        OidcTokenGrant(record.subject, record.nonce, record.name)
     }
 
-    fun issueAccessToken(subject: String): String = synchronized(lock) {
+    fun issueAccessToken(subject: String, name: String? = null): String =
+        issueAccessToken(subject, config.accessTokenTtlSeconds, name)
+
+    fun issueAccessToken(subject: String, ttlSeconds: Int, name: String? = null): String = synchronized(lock) {
+        require(ttlSeconds in 60..2_592_000) { "access token TTL is outside the supported range" }
         val token = randomToken(32)
-        accessTokens[sha256(token)] = AccessToken(subject, nowSeconds() + config.accessTokenTtlSeconds)
+        accessTokens[sha256(token)] = AccessToken(subject, name?.trim()?.takeIf(String::isNotBlank), nowSeconds() + ttlSeconds)
         token
     }
 
@@ -143,6 +151,24 @@ class OidcGrantStore(private val config: OidcConfig) {
             accessTokens.remove(key)
             null
         } else record.subject
+    }
+
+    fun nameForAccessToken(token: String): String? = synchronized(lock) {
+        val key = sha256(token)
+        val record = accessTokens[key] ?: return@synchronized null
+        if (record.expiresAt <= nowSeconds()) {
+            accessTokens.remove(key)
+            null
+        } else record.name
+    }
+
+    fun identityForAccessToken(token: String): OidcAccessIdentity? = synchronized(lock) {
+        val key = sha256(token)
+        val record = accessTokens[key] ?: return@synchronized null
+        if (record.expiresAt <= nowSeconds()) {
+            accessTokens.remove(key)
+            null
+        } else OidcAccessIdentity(record.subject, record.name)
     }
 
     fun revokeSubject(subject: String) = synchronized(lock) {

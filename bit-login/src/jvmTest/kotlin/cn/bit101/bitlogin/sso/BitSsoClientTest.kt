@@ -29,6 +29,36 @@ class BitSsoClientTest {
     }
 
     @Test
+    fun `password login can send browser client id`() = runTest {
+        val transport = ScriptedTransport(
+            response(200, loginHtml()),
+            response(200, "{\"code\":200,\"data\":{\"captchaInvisible\":false}}"),
+            response(302, "", "https://service.test/callback?code=OC-test&state=state-test"),
+        )
+        BitSsoClient("https://sso.test", transport).loginPassword(
+            "student",
+            "password",
+            "https://service.test/callback",
+            followRedirects = false,
+            clientId = "client-test",
+        )
+        assertEquals("https://service.test/callback", transport.requests[0].query["service"])
+        assertEquals("client-test", transport.requests[0].query["client_id"])
+    }
+
+    @Test
+    fun `getUser returns gateway identity`() = runTest {
+        val transport = ScriptedTransport(
+            response(200, "{\"username\":\"student\",\"name\":\"测试用户\"}", "https://sso.test/gate/getUser"),
+        )
+        val user = BitSsoClient("https://sso.test", transport).getUser()
+        assertEquals("student", user.username)
+        assertEquals("测试用户", user.name)
+        assertTrue(transport.requests.single().url.startsWith("https://sso.test/gate/getUser?"))
+        assertEquals("zh_CN", transport.requests.single().headers["Sid-Language"])
+    }
+
+    @Test
     fun `captcha requirement fails without OCR solver`() = runTest {
         val transport = ScriptedTransport(response(200, loginHtml()), response(200, "{\"code\":200,\"data\":{\"captchaInvisible\":true}}"))
         assertThrows<CaptchaError> {

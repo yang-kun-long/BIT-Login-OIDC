@@ -85,6 +85,24 @@ suspend fun loginToCustomService() {
 }
 ```
 
+如果目标是学校统一门户本身，需要把 CAS 回调跟随到门户前端，再从同一会话读取姓名：
+
+```kotlin
+val login = SsoLogin()
+val result = login.login(
+    username = username,
+    password = password,
+    callbackUrl = registeredGatewayCallbackUrl,
+    clientId = registeredGatewayClientId,
+)
+val user = result.user ?: login.getUser()
+println("${user.username}: ${user.name}")
+```
+
+`clientId` 必须是学校为该门户登记的值。`SsoLogin` 会保留 CAS 回调中的 Cookie，跟随
+首个回调建立网关 `SESSION`，然后请求 `/gate/getUser`；不应把 `ticket`、`code`、`state`
+或 Cookie 保存到配置或日志中。
+
 ```kotlin
 suspend fun login(
     username: String,
@@ -95,13 +113,15 @@ suspend fun login(
     trustDevice: Boolean = false,
     smsCodeCallback: SmsCodeCallback? = null,
     captchaSolver: CaptchaSolver? = null,
+    clientId: String? = null,
 ): LoginResult
 ```
 
 - `callbackUrl` 必填，CAS 成功后会带 service ticket 回调到该 URL。
 - `session` 属性是持久化 Cookie 的 `HttpClient`，可传入已有会话，或在构造时注入。
 - `retries` 和 `webvpnMode` 为兼容参数；当前服务登录流程负责网络环境与 WebVPN 会话处理。
-- `LoginResult` 包含 `cookieJson: Map<String, String>`、`cookie: String`、`callback: String` 和可选 `ticket: String?`；`toJson()` 返回前三项的 `JsonObject`。
+- `clientId` 为空时按普通 CAS service-ticket 流程登录；提供门户登记的 `clientId` 后，SDK 会跟随门户回调并在 `LoginResult.user` 返回 `username/name`。
+- `LoginResult` 包含 `cookieJson: Map<String, String>`、`cookie: String`、`callback: String`、可选 `ticket: String?` 和可选 `user: SsoUser`；`toJson()` 会在有身份信息时增加 `username/name`。
 
 ### 二次验证与验证码回调
 

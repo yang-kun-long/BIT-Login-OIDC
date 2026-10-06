@@ -40,7 +40,7 @@ class OidcGrantStoreTest {
         val store = OidcGrantStore(config)
         val flow = newFlow(store)
         assertTrue(store.setChallenge(flow.id, ChallengeHandle("challenge", "token")))
-        val location = store.completeLogin(flow.id, "test-student-01")!!
+        val location = store.completeLogin(flow.id, "test-student-01", "测试用户")!!
         assertTrue(location.startsWith(config.redirectUris.single()))
         assertTrue(location.contains("state=state-123"))
         val code = Url(location).parameters["code"]!!
@@ -49,6 +49,7 @@ class OidcGrantStoreTest {
         val grant = store.consumeAuthorizationCode(code, config.clientId, config.redirectUris.single(), verifier)
         assertEquals("test-student-01", grant?.subject)
         assertEquals("nonce-456", grant?.nonce)
+        assertEquals("测试用户", grant?.name)
         assertNull(store.consumeAuthorizationCode(code, config.clientId, config.redirectUris.single(), verifier))
     }
 
@@ -66,13 +67,14 @@ class OidcGrantStoreTest {
         val store = OidcGrantStore(config)
         val flow = newFlow(store)
         assertTrue(store.setChallenge(flow.id, ChallengeHandle("challenge", "token")))
-        val codeLocation = store.completeLogin(flow.id, "test-student-01")!!
+        val codeLocation = store.completeLogin(flow.id, "test-student-01", "测试用户")!!
         val code = Url(codeLocation).parameters["code"]!!
-        val token = store.issueAccessToken("test-student-01")
+        val token = store.issueAccessToken("test-student-01", name = "测试用户")
 
         store.revokeSubject("test-student-01")
 
         assertNull(store.consumeAuthorizationCode(code, config.clientId, config.redirectUris.single(), verifier))
         assertNull(store.subjectForAccessToken(token))
+        assertNull(store.nameForAccessToken(token))
     }
 }

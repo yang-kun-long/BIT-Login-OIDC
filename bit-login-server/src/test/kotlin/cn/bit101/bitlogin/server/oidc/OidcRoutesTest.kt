@@ -23,7 +23,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -78,10 +77,13 @@ class OidcRoutesTest {
         override suspend fun submitCaptcha(handle: ChallengeHandle, code: String) = Unit
 
         override suspend fun authenticatedSubject(handle: ChallengeHandle): String? = subjects[handle.challengeId]
+
+        override suspend fun authenticatedIdentity(handle: ChallengeHandle): AuthenticatedIdentity? =
+            subjects[handle.challengeId]?.let { AuthenticatedIdentity(it, "测试用户") }
     }
 
     @Test
-    fun `authorization code flow returns only student id and validates signature and PKCE`() = testApplication {
+    fun `authorization code flow returns identity claims and validates signature and PKCE`() = testApplication {
         val oidcConfig = config()
         val signingKey = OidcSigningKey.loadOrCreate(oidcConfig.signingKeyFile, oidcConfig.keyId)
         val grants = OidcGrantStore(oidcConfig)
@@ -91,6 +93,9 @@ class OidcRoutesTest {
             routing { oidcRoutes(oidcConfig, signingKey, grants, FakeAuthenticator(), blocklist) }
         }
         val browser = createClient { followRedirects = false }
+
+        val discovery = browser.get("/.well-known/openid-configuration")
+        assertTrue(discovery.bodyAsText().contains("\"name\""))
 
         val loginPage = browser.get(authorizePath())
         assertEquals(HttpStatusCode.OK, loginPage.status)
@@ -135,8 +140,8 @@ class OidcRoutesTest {
         assertEquals(clientId, jwt.jwtClaimsSet.audience.single())
         assertEquals("test-student-01", jwt.jwtClaimsSet.subject)
         assertEquals("test-student-01", jwt.jwtClaimsSet.getStringClaim("student_id"))
+        assertEquals("测试用户", jwt.jwtClaimsSet.getStringClaim("name"))
         assertEquals("nonce-abc", jwt.jwtClaimsSet.getStringClaim("nonce"))
-        assertFalse(jwt.jwtClaimsSet.claims.containsKey("name"))
 
         val userinfo = browser.get("/oauth/userinfo") {
             header(HttpHeaders.Authorization, "Bearer ${tokenJson["access_token"]!!.jsonPrimitive.content}")
@@ -145,7 +150,7 @@ class OidcRoutesTest {
         val userinfoJson = Json.parseToJsonElement(userinfo.bodyAsText()).jsonObject
         assertEquals("test-student-01", userinfoJson["sub"]!!.jsonPrimitive.content)
         assertEquals("test-student-01", userinfoJson["student_id"]!!.jsonPrimitive.content)
-        assertFalse(userinfoJson.containsKey("name"))
+        assertEquals("测试用户", userinfoJson["name"]!!.jsonPrimitive.content)
 
         blocklist.add("test-student-01")
         val blockedUserinfo = browser.get("/oauth/userinfo") {

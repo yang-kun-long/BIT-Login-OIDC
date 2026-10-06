@@ -448,7 +448,11 @@ private fun workbenchOverview(
 """.trimIndent()
 
 private fun workbenchApplication(config: OidcConfig): String {
-    val callbacks = config.redirectUris.sorted().joinToString("<br>") { "<code>${escapeHtml(it)}</code>" }
+    val apps = config.registeredApplications()
+    val appRows = apps.joinToString("") { app ->
+        val callbacks = app.redirectUris.sorted().joinToString("<br>") { "<code>${escapeHtml(it)}</code>" }
+        "<tr><th scope=\"row\">${escapeHtml(app.name)}</th><td><code>${escapeHtml(app.clientId)}</code></td><td>$callbacks</td><td>${formatTtl(app.accessTokenTtlSeconds)}</td></tr>"
+    }
     val endpoints = listOf(
         "Discovery" to endpoint(config.issuer, "/.well-known/openid-configuration"),
         "Authorization" to endpoint(config.issuer, "/oauth/authorize"),
@@ -460,12 +464,13 @@ private fun workbenchApplication(config: OidcConfig): String {
     }
     return """
     <section id="application" class="application-section" aria-labelledby="application-title">
-      <div class="section-heading"><div><p class="eyebrow">REGISTERED APPLICATION</p><h2 id="application-title">应用接入</h2></div><span class="badge">单客户端模式</span></div>
-      <div class="application-summary"><div><span class="eyebrow">CLIENT</span><h3>报销 OA</h3><code>${escapeHtml(config.clientId)}</code></div><div class="summary-status"><span class="status-dot"></span>已登记</div></div>
-      <div class="detail-grid">
-        <div class="detail-block"><span class="label">Issuer / 签发方</span><code>${escapeHtml(config.issuer)}</code></div>
-        <div class="detail-block"><span class="label">Redirect URI / 回调地址</span><span>$callbacks</span></div>
-      </div>
+       <div class="section-heading"><div><p class="eyebrow">REGISTERED APPLICATIONS</p><h2 id="application-title">应用接入</h2></div><span class="badge">${apps.size} 个客户端</span></div>
+       <div class="application-summary"><div><span class="eyebrow">ISSUER / 签发方</span><code>${escapeHtml(config.issuer)}</code></div><div class="summary-status"><span class="status-dot"></span>由本服务签发</div></div>
+       <div class="detail-grid">
+         <div class="detail-block"><span class="label">默认有效期</span><strong>${formatTtl(config.registeredApplications().first().accessTokenTtlSeconds)}</strong><small>每个应用可独立配置</small></div>
+         <div class="detail-block"><span class="label">签发内容</span><span>OIDC access token 与 ID token，均由本服务签名/签发</span></div>
+       </div>
+       <div class="table-wrap endpoint-table"><table><caption>应用有效期与回调</caption><thead><tr><th>应用</th><th>Client ID</th><th>Redirect URI</th><th>Token 有效期</th></tr></thead><tbody>$appRows</tbody></table></div>
       <div class="table-wrap endpoint-table"><table><caption>对接端点</caption><tbody>$endpoints</tbody></table></div>
       <div class="section-actions"><span>导出的清单只包含公开接入参数，不含私钥、密码、令牌或数据库路径。</span><span class="download-actions"><a class="button secondary" href="/admin/export/oidc.md">下载申请清单</a><a class="button secondary" href="/admin/export/oidc.json">下载 JSON</a></span></div>
     </section>
@@ -480,10 +485,10 @@ private fun workbenchProtocol(config: OidcConfig, signingKey: OidcSigningKey?): 
       <div class="protocol-grid">
         <div class="protocol-item"><span class="label">授权流程</span><strong>Authorization Code</strong><small>浏览器登录后回调授权码</small></div>
         <div class="protocol-item"><span class="label">客户端安全</span><strong>PKCE · S256</strong><small>公开客户端，不使用 client secret</small></div>
-        <div class="protocol-item"><span class="label">身份范围</span><strong>openid · student_id</strong><small>只返回学工号身份</small></div>
+        <div class="protocol-item"><span class="label">身份范围</span><strong>openid · student_id</strong><small>返回学工号和学校认证姓名</small></div>
         <div class="protocol-item"><span class="label">令牌签名</span><strong>${escapeHtml(keyDescription)}</strong><small>公钥通过 JWKS 发布</small></div>
       </div>
-      <div class="claims-line"><span class="label">当前 Claims</span><code>sub</code><code>student_id</code><span class="claim-note">不包含姓名、成绩、课表等业务信息</span></div>
+      <div class="claims-line"><span class="label">当前 Claims</span><code>sub</code><code>student_id</code><code>name</code><span class="claim-note">姓名来自学校上游认证；不包含成绩、课表等业务信息</span></div>
     </section>
 """.trimIndent()
 }
@@ -530,14 +535,20 @@ private fun auditLabel(action: String): String = when (action) {
 
 private fun oidcIntegrationJson(config: OidcConfig, signingKey: OidcSigningKey?): JsonObject = buildJsonObject {
     put("issuer", config.issuer)
-    put("client_id", config.clientId)
-    put("redirect_uris", JsonArray(config.redirectUris.sorted().map(::JsonPrimitive)))
+    put("applications", JsonArray(config.registeredApplications().map { app ->
+        buildJsonObject {
+            put("name", app.name)
+            put("client_id", app.clientId)
+            put("redirect_uris", JsonArray(app.redirectUris.sorted().map(::JsonPrimitive)))
+            put("access_token_ttl_seconds", app.accessTokenTtlSeconds)
+        }
+    }))
     put("response_type", "code")
     put("grant_type", "authorization_code")
     put("pkce", "S256")
     put("token_endpoint_auth_method", "none")
     put("scopes", JsonArray(listOf(JsonPrimitive("openid"), JsonPrimitive("student_id"))))
-    put("claims", JsonArray(listOf(JsonPrimitive("sub"), JsonPrimitive("student_id"))))
+    put("claims", JsonArray(listOf(JsonPrimitive("sub"), JsonPrimitive("student_id"), JsonPrimitive("name"))))
     put("tls_required_for_production", true)
     put("endpoints", buildJsonObject {
         put("discovery", endpoint(config.issuer, "/.well-known/openid-configuration"))
@@ -561,13 +572,16 @@ private fun oidcIntegrationMarkdown(config: OidcConfig, signingKey: OidcSigningK
     appendLine("## 应用登记")
     appendLine()
     appendLine("- Issuer：`${config.issuer}`")
-    appendLine("- Client ID：`${config.clientId}`")
+    config.registeredApplications().forEach { app ->
+        appendLine("- 应用：`${app.name}`，Client ID：`${app.clientId}`，Token 有效期：`${formatTtl(app.accessTokenTtlSeconds)}`")
+        app.redirectUris.sorted().forEach { appendLine("  - 回调：`$it`") }
+    }
     appendLine("- Response type：`code`")
     appendLine("- Grant type：`authorization_code`")
     appendLine("- Client authentication：`none`（公开客户端）")
     appendLine("- PKCE：`S256`")
     appendLine("- Scopes：`openid student_id`")
-    appendLine("- Claims：`sub`、`student_id`")
+    appendLine("- Claims：`sub`、`student_id`、`name`（姓名来自学校上游认证）")
     appendLine()
     appendLine("### 精确回调地址")
     config.redirectUris.sorted().forEach { appendLine("- `$it`") }
@@ -585,9 +599,15 @@ private fun oidcIntegrationMarkdown(config: OidcConfig, signingKey: OidcSigningK
     appendLine("## 签名与迁移说明")
     appendLine()
     appendLine("- ID Token 签名：`${signingKey?.algorithm ?: "RS256"}`，kid：`${signingKey?.keyId ?: "oidc-1"}`。公钥通过 JWKS 发布。")
-    appendLine("- 当前服务只返回学工号身份，不返回姓名、成绩、课表等业务数据。")
+    appendLine("- 当前服务返回经过学校上游认证的学工号和姓名；不返回成绩、课表等业务数据。")
     appendLine("- 当前地址仅适合校内 HTTP 试运行；正式部署应使用学校批准的 HTTPS 域名或校园 PKI 证书。")
     appendLine("- 学校迁移时保留下游 OIDC 合约，替换服务端上游认证适配层，并重新登记精确 Issuer 和回调地址。")
+}
+
+private fun formatTtl(seconds: Int): String = when {
+    seconds % 86400 == 0 -> "${seconds / 86400} 天"
+    seconds % 3600 == 0 -> "${seconds / 3600} 小时"
+    else -> "${seconds} 秒"
 }
 
 private fun adminErrorPage(message: String): String = adminPage(

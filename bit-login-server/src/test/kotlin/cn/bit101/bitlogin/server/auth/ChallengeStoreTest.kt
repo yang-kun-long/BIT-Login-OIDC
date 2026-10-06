@@ -71,8 +71,9 @@ class ChallengeStoreTest {
     fun `complete transitions to authenticated`() = runBlocking {
         val store = newStore()
         val handle = store.create(listOf("jwb"))
-        store.complete(handle.challengeId)
+        store.complete(handle.challengeId, "测试用户")
         assertEquals("authenticated", store.snapshot(handle.challengeId, handle.accessToken)["status"])
+        assertEquals("测试用户", store.authenticate(handle.challengeId, handle.accessToken)["name"])
     }
 
     @Test

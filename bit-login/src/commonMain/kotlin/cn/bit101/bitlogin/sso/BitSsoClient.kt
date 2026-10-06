@@ -72,6 +72,7 @@ class BitSsoClient(
         captchaSolver: CaptchaSolver? = null,
         trustDevice: Boolean = false,
         followRedirects: Boolean = true,
+        clientId: String? = null,
     ): SsoLoginResult {
         require(username.isNotBlank() && password.isNotEmpty()) { "username and password must not be empty" }
         val cleanUsername = username.trim()
@@ -82,7 +83,10 @@ class BitSsoClient(
         val loaded = request(
             HttpMethod.Get,
             "$casUrl/login",
-            query = service?.let { mapOf("service" to it) }.orEmpty(),
+            query = buildMap {
+                service?.let { put("service", it) }
+                clientId?.takeIf { it.isNotBlank() }?.let { put("client_id", it) }
+            },
             allowRedirects = followRedirects,
             cacheBust = false,
         )
@@ -139,6 +143,7 @@ class BitSsoClient(
         smsCodeCallback: SmsCodeCallback,
         captchaSolver: CaptchaSolver? = null,
         service: String? = null,
+        clientId: String? = null,
     ): SsoLoginResult {
         if (!PHONE_PATTERN.matches(phone)) {
             throw ConfigurationError("phone must be an 11-digit mainland China mobile number")
@@ -149,7 +154,10 @@ class BitSsoClient(
         val loaded = request(
             HttpMethod.Get,
             "$casUrl/login",
-            query = service?.let { mapOf("service" to it) }.orEmpty(),
+            query = buildMap {
+                service?.let { put("service", it) }
+                clientId?.takeIf { it.isNotBlank() }?.let { put("client_id", it) }
+            },
             cacheBust = false,
         )
         val parsed = SsoParser.parseLoginPage(loaded.bodyText, loaded.url)
@@ -194,6 +202,36 @@ class BitSsoClient(
         addRiskFields(form, page, "smsLogin", phone)
         val response = loginPost(page.formAction, form, followRedirects = true)
         return loginResult(response, "短信验证码错误或已失效，请重新发起登录")
+    }
+
+    /**
+     * Reads the currently authenticated school identity from the gateway.
+     * This must be called on the same transport after a browser-style callback
+     * has completed, so the HttpClient cookie jar still contains SESSION.
+     */
+    suspend fun getUser(): SsoUser {
+        val response = request(
+            HttpMethod.Get,
+            "$gateUrl/getUser?${currentTimeMillis()}",
+            extraHeaders = mapOf(
+                "Accept" to "application/json, text/plain, */*",
+                "Sid-Language" to "zh_CN",
+            ),
+        )
+        if (response.status !in 200..299) {
+            throw SsoHttpException(response.status, response.url, response.bodyText)
+        }
+        val json = try {
+            Json.parseToJsonElement(response.bodyText).jsonObject
+        } catch (e: Exception) {
+            throw ConfigurationError("/gate/getUser returned invalid JSON", e)
+        }
+        val username = json["username"]?.jsonPrimitive?.contentOrNullSafe().orEmpty()
+        val name = json["name"]?.jsonPrimitive?.contentOrNullSafe().orEmpty()
+        if (username.isBlank() || name.isBlank()) {
+            throw ConfigurationError("/gate/getUser returned no authenticated username/name")
+        }
+        return SsoUser(username, name)
     }
 
     private suspend fun completeSecondFactor(

@@ -3,6 +3,7 @@ package cn.bit101.bitlogin.login
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import cn.bit101.bitlogin.sso.SsoUser
 
 /**
  * Result of an SSO login flow. Equivalent to the dict returned by
@@ -13,6 +14,7 @@ class LoginResult(
     val cookieJson: Map<String, String>,
     val callback: String,
     val ticket: String? = null,
+    val user: SsoUser? = null,
 ) {
     val cookie: String = cookieJson.entries.joinToString("; ") { "${it.key}=${it.value}" }
 
@@ -20,5 +22,9 @@ class LoginResult(
         put("cookie_json", buildJsonObject { cookieJson.forEach { (k, v) -> put(k, JsonPrimitive(v)) } })
         put("cookie", JsonPrimitive(cookie))
         put("callback", JsonPrimitive(callback))
+        user?.let {
+            put("username", JsonPrimitive(it.username))
+            put("name", JsonPrimitive(it.name))
+        }
     }
 }

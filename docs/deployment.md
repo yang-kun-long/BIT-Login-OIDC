@@ -92,6 +92,11 @@ chmod 750 /var/lib/bit-login /etc/bit-login
 | `AUTH_DB_PATH` | `/tmp/bit-login/auth.db` | SQLite 数据库路径。用于持久化 challenge 状态、SMS 码和服务会话。数据库目录和文件会以 `0700`/`0600` 权限创建。 |
 | `AUTH_CHALLENGE_TTL` | `300` | challenge 等待状态有效期（秒）。到达后状态变为 `expired`。 |
 | `AUTH_SESSION_TTL` | `1800` | 认证成功后会话有效期（秒）。期间可通过 Bearer token 复用。 |
+| `OIDC_ACCESS_TOKEN_TTL` | `604800` | 旧单客户端配置的默认 access token / ID Token 有效期（秒），默认 7 天。 |
+| `OIDC_APPLICATIONS` | 空 | 可选 JSON 数组，按应用登记 `client_id`、`name`、`redirect_uris` 和 `access_token_ttl_seconds`，每个应用可独立设置有效期（60–2592000 秒）。 |
+| `OIDC_APP_TOKEN_TTLS` | 空 | 兼容旧单客户端配置的覆盖项，格式为 `client-id=seconds`。 |
+| `OIDC_UPSTREAM_CALLBACK_URL` | BIT 学校门户回调 | 学校门户式 CAS 回调地址，用于建立网关会话并读取 `/gate/getUser` 的姓名；不要填一次性 `ticket`、`code` 或 `state`。 |
+| `OIDC_UPSTREAM_CLIENT_ID` | BIT 学校门户客户端 | 学校门户登记的公开 `client_id`；它不是客户端密钥。 |
 | `REGISTRATION_JWT_PRIVATE_KEY_FILE` | 空 | Ed25519 私钥路径（PKCS#8 PEM 格式）。不配置时注册 JWT 接口返回 503。 |
 | `REGISTRATION_JWT_ALLOWED_AUDIENCES` | 空 | JWT audience 白名单，逗号分隔。不配置时注册 JWT 不可用。 |
 | `REGISTRATION_JWT_TTL` | `300` | 注册 JWT 有效期（秒）。 |

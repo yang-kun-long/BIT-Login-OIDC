@@ -1,0 +1,13 @@
+[Unit]
+Description=Local OIDC issuer hairpin route for reimbursement OA
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c '/sbin/sysctl -q -w net.ipv4.conf.all.route_localnet=1; /sbin/iptables -t nat -C OUTPUT -d 81.70.17.186 -p tcp --dport 9443 -j DNAT --to-destination 127.0.0.1:9443 2>/dev/null || /sbin/iptables -t nat -A OUTPUT -d 81.70.17.186 -p tcp --dport 9443 -j DNAT --to-destination 127.0.0.1:9443'
+ExecStop=/sbin/iptables -t nat -D OUTPUT -d 81.70.17.186 -p tcp --dport 9443 -j DNAT --to-destination 127.0.0.1:9443
+
+[Install]
+WantedBy=multi-user.target

@@ -22,6 +22,16 @@ class ParserTest {
     }
 
     @Test
+    fun `form without action preserves CAS service and client query`() {
+        val loginUrl = "https://sso.bit.edu.cn/cas/login?service=https%3A%2F%2Fapp.test%2Fcallback&client_id=client-test"
+        val parsed = SsoParser.parseLoginPage(
+            "<form method=\"post\"><span id=\"login-page-flowkey\">flow</span><span id=\"login-croypto\">MDEyMzQ1Njc4OWFiY2RlZg==</span></form>",
+            loginUrl,
+        )
+        assertEquals(loginUrl, parsed.page?.formAction)
+    }
+
+    @Test
     fun `uses login action and surfaces CAS error when configuration is incomplete`() {
         val parsed = SsoParser.parseLoginPage(
             "<p id=\"login-page-flowkey\">flow</p><p id=\"login-error-msg\">denied</p><p id=\"login-error-code\">1030027</p>",

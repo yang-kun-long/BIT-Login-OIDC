@@ -97,3 +97,14 @@ tasks.register<JavaExec>("scoreManualTest") {
     mainClass.set("cn.bit101.bitlogin.manual.ScoreManualTestKt")
     standardInput = System.`in`
 }
+
+tasks.register<JavaExec>("identityManualTest") {
+    group = "verification"
+    description = "验证门户式 CAS 回调并读取 /gate/getUser（配置从环境变量读取）"
+    val jvmTestCompilation = kotlin.targets.getByName("jvm").compilations.getByName("test")
+    dependsOn(jvmTestCompilation.compileTaskProvider)
+    classpath = jvmTestCompilation.output.allOutputs +
+            (jvmTestCompilation.runtimeDependencyFiles ?: files())
+    mainClass.set("cn.bit101.bitlogin.manual.IdentityManualTestKt")
+    standardInput = System.`in`
+}

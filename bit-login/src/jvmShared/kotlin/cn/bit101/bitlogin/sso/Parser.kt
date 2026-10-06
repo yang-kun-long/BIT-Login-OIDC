@@ -42,7 +42,13 @@ actual object SsoParser {
 
     private fun text(document: org.jsoup.nodes.Document, id: String): String = document.getElementById(id)?.text()?.trim().orEmpty()
 
-    private fun resolveFormAction(responseUrl: String, action: String?): String = URI(responseUrl)
-        .resolve(action?.takeIf { it.isNotBlank() } ?: "login")
-        .toString()
+    private fun resolveFormAction(responseUrl: String, action: String?): String {
+        // An omitted HTML form action submits to the current document URL,
+        // including its query string. CAS carries service/client_id there,
+        // which selects the success callback and establishes the gateway
+        // session used by /gate/getUser. Resolving an invented "login" path
+        // silently dropped those query parameters.
+        if (action.isNullOrBlank()) return responseUrl
+        return URI(responseUrl).resolve(action).toString()
+    }
 }
